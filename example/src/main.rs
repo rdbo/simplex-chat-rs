@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
 
     let address = match chat.api_get_user_address().await? {
         Some(addr) => addr,
-        None => chat.api_create_user_address().await?,
+        None => chat.api_create_user_address(user.user_id).await?,
     };
     println!("Address: {:?}", address);
 

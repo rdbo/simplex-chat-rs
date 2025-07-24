@@ -51,13 +51,22 @@ pub struct Contact {
     pub contact_id: u64,
     pub local_display_name: String,
     // profile: Profile,
-    // active_conn: Connection,
+    pub active_conn: Option<Connection>,
+    pub contact_status: ContactStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub via_group: Option<u64>,
     // created_at: Date,
     #[serde(flatten)]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub _unknown_fields: HashMap<String, JsonValue>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum ContactStatus {
+    Active,
+    Deleted,
+    DeletedByUser,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -231,30 +240,41 @@ pub struct Chat {
     pub _unknown_fields: HashMap<String, JsonValue>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UserContactLink {
-    pub conn_req_contact: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_accept: Option<AutoAccept>,
-    #[serde(flatten)]
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub _unknown_fields: HashMap<String, JsonValue>,
+pub struct ContactLink {
+    pub address_settings: AddressSettings,
+    pub conn_link_contact: ConnLinkContact,
+    pub short_link_data_set: bool,
+    pub user_contact_link_id: i64,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddressSettings {
+    pub auto_accept: AutoAccept,
+    pub business_address: bool,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnLinkContact {
+    pub conn_full_link: String,
+    pub conn_short_link: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutoAccept {
     pub accept_incognito: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_reply: Option<MsgContent>,
-    #[serde(flatten)]
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub _unknown_fields: HashMap<String, JsonValue>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum MsgContent {
     Text {
         text: String,
@@ -341,8 +361,14 @@ pub struct ComposedMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quoted_item_id: Option<u64>,
     pub msg_content: MsgContent,
+    pub mentions: Mentions,
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Mentions {}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum ChatType {
     Direct,
     Group,

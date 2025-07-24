@@ -83,16 +83,9 @@ pub enum ChatResponse {
         #[serde(skip_serializing_if = "HashMap::is_empty")]
         _unknown_fields: HashMap<String, JsonValue>,
     },
-    UserContactLink {
-        user: User,
-        contact_link: UserContactLink,
-        #[serde(flatten)]
-        #[serde(skip_serializing_if = "HashMap::is_empty")]
-        _unknown_fields: HashMap<String, JsonValue>,
-    },
     UserContactLinkCreated {
         user: User,
-        conn_req_contact: String,
+        conn_link_contact: ConnLinkContact,
         #[serde(flatten)]
         #[serde(skip_serializing_if = "HashMap::is_empty")]
         _unknown_fields: HashMap<String, JsonValue>,
@@ -102,6 +95,17 @@ pub enum ChatResponse {
         #[serde(flatten)]
         #[serde(skip_serializing_if = "HashMap::is_empty")]
         _unknown_fields: HashMap<String, JsonValue>,
+    },
+    #[serde(untagged)]
+    ContactLink {
+        user: User,
+        contact_link: ContactLink,
+        // content of this should be "userContactLink", but idk how to check it here
+        #[serde(rename = "type")]
+        _type: String,
+        #[serde(flatten)]
+        #[serde(skip_serializing_if = "HashMap::is_empty")]
+        unknown_fields: HashMap<String, JsonValue>,
     },
     #[serde(untagged)]
     ContactRequest { contact_request: UserContactRequest },

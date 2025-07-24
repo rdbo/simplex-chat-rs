@@ -208,11 +208,11 @@ impl ChatClient {
         Ok(chats)
     }
 
-    pub async fn api_get_user_address(&mut self) -> Result<Option<String>> {
+    pub async fn api_get_user_address(&mut self) -> Result<Option<ConnLinkContact>> {
         let resp = self.send_command("/show_address").await?;
         match resp {
-            ChatResponse::UserContactLink { contact_link, .. } => {
-                Ok(Some(contact_link.conn_req_contact))
+            ChatResponse::ContactLink { contact_link, .. } => {
+                Ok(Some(contact_link.conn_link_contact))
             }
             ChatResponse::ChatCmdError { .. } => Ok(None),
             _ => {
@@ -221,16 +221,16 @@ impl ChatClient {
         }
     }
 
-    pub async fn api_create_user_address(&mut self) -> Result<String> {
-        let resp = self.send_command("/address").await?;
+    pub async fn api_create_user_address(&mut self, user_id: u64) -> Result<ConnLinkContact> {
+        let resp = self.send_command(&format!("/_address {user_id}")).await?;
         let ChatResponse::UserContactLinkCreated {
-            conn_req_contact, ..
+            conn_link_contact, ..
         } = resp
         else {
             bail!("The command response does not match the expected type");
         };
 
-        Ok(conn_req_contact)
+        Ok(conn_link_contact)
     }
 
     pub async fn api_list_members(&mut self, group_id: u64) -> Result<Vec<GroupMember>> {
@@ -261,7 +261,7 @@ impl ChatClient {
     ) -> Result<Vec<AChatItem>> {
         let messages_json = serde_json::to_string(&messages)?;
         let cmd = format!(
-            "/_send {}{} {}",
+            "/_send {}{} live=off ttl=default json {}",
             chat_type.to_string(),
             chat_id,
             messages_json
@@ -288,6 +288,7 @@ impl ChatClient {
                 text: message.to_owned(),
                 _unknown_fields: HashMap::new(),
             },
+            mentions: Mentions {},
         };
 
         self.api_send_messages(chat_type, chat_id, vec![composed_message])
