@@ -1,13 +1,14 @@
 mod responses;
 mod types;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
 pub use responses::*;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use std::{
     collections::HashMap,
     sync::{
@@ -15,24 +16,22 @@ use std::{
         Arc, Mutex,
     },
 };
-use std::{sync::mpsc, time::Duration};
-use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
+use tokio::{net::TcpStream, sync::mpsc};
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 
 type ChatWebSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 type CorrId = String;
-type MessageQueue = mpsc::Receiver<ChatSrvResponse>;
+type MessageQueue = mpsc::UnboundedReceiver<ChatSrvResponse>;
 
 #[derive(Debug)]
 pub struct ChatClient {
     uri: String,
     command_counter: AtomicU64,
-    timeout: Duration,
     write_stream: SplitSink<ChatWebSocket, Message>,
     listener_handle: JoinHandle<()>,
-    command_waiters: Arc<Mutex<HashMap<CorrId, mpsc::Sender<ChatResponse>>>>,
+    command_waiters: Arc<Mutex<HashMap<CorrId, mpsc::UnboundedSender<ChatResponse>>>>,
     message_queue: MessageQueue, // Note that command_waiters has precedence over message_queue
 }
 
@@ -70,7 +69,7 @@ impl ChatClient {
         let command_waiters = Arc::new(Mutex::new(HashMap::new()));
         let command_waiters_copy = command_waiters.clone();
         let uri_copy = uri.to_owned();
-        let (tx, rx) = mpsc::channel::<ChatSrvResponse>();
+        let (tx, rx) = mpsc::unbounded_channel::<ChatSrvResponse>();
         let listener_handle = tokio::spawn(async {
             Self::message_listener(read_stream, uri_copy, command_waiters_copy, tx).await
         });
@@ -82,7 +81,6 @@ impl ChatClient {
             listener_handle,
             command_waiters,
             message_queue: rx,
-            timeout: Duration::from_millis(3000),
         };
 
         Ok(client)
@@ -91,8 +89,8 @@ impl ChatClient {
     pub async fn message_listener(
         read_stream: SplitStream<ChatWebSocket>,
         uri: String,
-        command_waiters: Arc<Mutex<HashMap<CorrId, mpsc::Sender<ChatResponse>>>>,
-        message_queue: mpsc::Sender<ChatSrvResponse>,
+        command_waiters: Arc<Mutex<HashMap<CorrId, mpsc::UnboundedSender<ChatResponse>>>>,
+        message_queue: mpsc::UnboundedSender<ChatSrvResponse>,
     ) {
         read_stream
             .for_each(|message| async {
@@ -129,7 +127,7 @@ impl ChatClient {
         let corr_id = (self.command_counter.fetch_add(1, Ordering::Relaxed) + 1).to_string();
 
         // Create channel for receiving back the command return
-        let (tx, rx) = mpsc::channel::<ChatResponse>();
+        let (tx, mut rx) = mpsc::unbounded_channel::<ChatResponse>();
 
         {
             let mut command_waiters = self.command_waiters.lock().unwrap();
@@ -161,13 +159,12 @@ impl ChatClient {
         log::debug!("Command '{}' send successfully to '{}'", corr_id, self.uri);
 
         log::debug!(
-            "Waiting for response to command '{}' on client '{}'... (timeout = {:?})",
+            "Waiting for response to command '{}' on client '{}'...",
             corr_id,
             self.uri,
-            self.timeout
         );
 
-        let resp = rx.recv_timeout(self.timeout);
+        let resp = rx.recv().await.context("channel command_waiter is closed");
 
         {
             let mut command_waiters = self.command_waiters.lock().unwrap();
@@ -186,7 +183,11 @@ impl ChatClient {
     }
 
     pub async fn next_message(&mut self) -> Result<ChatSrvResponse> {
-        Ok(self.message_queue.recv()?)
+        Ok(self
+            .message_queue
+            .recv()
+            .await
+            .context("channel message_queue is closed")?)
     }
 
     // Simplified APIs
